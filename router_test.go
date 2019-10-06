@@ -36,6 +36,14 @@ func TestRouter(t *testing.T) {
 		})
 	})
 
-	http.ListenAndServe("0.0.0.0:80", &handler)
+	handler.Group("static", nil, func(handle *router.Route) {
+		handle.Static("subdir", "./assets/", func(req router.Request) {
+			fmt.Println("User request for static file:" + req.Req().RequestURI)
+		})
+	})
 
+	err := http.ListenAndServe("0.0.0.0:8080", &handler)
+	if err != nil {
+		fmt.Println(err)
+	}
 }

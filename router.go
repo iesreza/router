@@ -2,6 +2,7 @@ package router
 
 import (
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 )
@@ -19,6 +20,8 @@ type Route struct {
 	match       string
 	method      string
 	domain      string
+	static      bool
+	staticDir   string
 	domainMatch *regexp.Regexp
 	routes      []*Route
 	tokens      []token
@@ -96,7 +99,6 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	}
 
 	i = 0
-
 	for i = 0; i < len(handle.tokens); i++ {
 		if handle.tokens[i].lazy {
 			continue
@@ -127,11 +129,24 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 		req.Parameters[k] = v
 	}
 
+	if handle.static {
+		path := handle.staticDir + "/" + strings.Join(uriTokens[p:], "/")
+		if fileExists(path) {
+			if handle.callback != nil {
+				handle.callback(*req)
+			}
+			http.ServeFile(req.writer, req.request, path)
+		} else {
+			req.writer.WriteHeader(404)
+		}
+
+		return false
+	}
 	if handle.callback != nil {
 		handle.callback(*req)
 	}
 
-	if len(handle.routes) > 0 {
+	if handle.group && len(handle.routes) > 0 {
 		for _, r := range handle.routes {
 			if recursiveMatch(uriTokens[p:], r, req) {
 				return true && !r.group
@@ -255,4 +270,40 @@ func (route *handler) Middleware(middlewares ...func(req Request) bool) *handler
 		route.middleware = append(route.middleware, item)
 	}
 	return route
+}
+
+func (handle *handler) Static(match string, dir string, onMatch func(req Request)) *Route {
+	newRoute := Route{
+		match:     strings.Trim(match, "/"),
+		routes:    []*Route{},
+		static:    true,
+		staticDir: strings.Trim(dir, "/"),
+		tokens:    tokenize(strings.Trim(match, "/")),
+		group:     true,
+		callback:  onMatch,
+	}
+	handle.routes = append(handle.routes, &newRoute)
+	return &newRoute
+}
+
+func (handle *Route) Static(match string, dir string, onMatch func(req Request)) *Route {
+	newRoute := Route{
+		match:     strings.Trim(match, "/"),
+		routes:    []*Route{},
+		static:    true,
+		staticDir: strings.Trim(dir, "/"),
+		tokens:    tokenize(strings.Trim(match, "/")),
+		group:     true,
+		callback:  onMatch,
+	}
+	handle.routes = append(handle.routes, &newRoute)
+	return &newRoute
+}
+
+func fileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
 }
