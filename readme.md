@@ -87,6 +87,7 @@ You may use middlewares to intervene in url matching procedure. middlewares can 
 
 #### Static files
 You may want to serve static files as assets or simple html files and etc. you may simply create a customized router for this reason.
+Notice: Static file router support resume
 ```
 	handler.Group("static",nil, func(handle *router.Route) {
 		handle.Static("subdir","./assets/",nil)
