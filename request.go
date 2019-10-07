@@ -11,6 +11,7 @@ type Request struct {
 	Parameters map[string]value
 	Get        map[string]value
 	Post       map[string]value
+	Matched    bool
 }
 
 func NewRequest(writer http.ResponseWriter, request *http.Request) Request {

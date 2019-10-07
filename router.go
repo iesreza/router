@@ -14,6 +14,7 @@ var defaultRouter = handler{
 type handler struct {
 	routes     []*Route
 	middleware []func(req Request) bool
+	Fallback   func(req Request)
 }
 
 type Route struct {
@@ -27,7 +28,8 @@ type Route struct {
 	tokens      []token
 	group       bool
 	middleware  []func(req Request) bool
-	callback    func(req Request)
+	Callback    func(req Request)
+	Fallback    func(req Request)
 }
 
 func GetInstance() handler {
@@ -42,12 +44,17 @@ func (handle *handler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 		Parameters: map[string]value{},
 		Get:        map[string]value{},
 		Post:       map[string]value{},
+		Matched:    false,
 	}
 	for _, r := range handle.routes {
 
 		if recursiveMatch(uriTokens, r, &req) {
 			return
 		}
+	}
+	if !req.Matched && handle.Fallback != nil {
+		req.Matched = true
+		handle.Fallback(req)
 	}
 
 }
@@ -132,25 +139,34 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	if handle.static {
 		path := handle.staticDir + "/" + strings.Join(uriTokens[p:], "/")
 		if fileExists(path) {
-			if handle.callback != nil {
-				handle.callback(*req)
+			if handle.Callback != nil {
+				handle.Callback(*req)
 			}
 			http.ServeFile(req.writer, req.request, path)
+			req.Matched = true
+			return true
 		} else {
 			req.writer.WriteHeader(404)
 		}
 
 		return false
 	}
-	if handle.callback != nil {
-		handle.callback(*req)
+	if handle.Callback != nil {
+		handle.Callback(*req)
 	}
 
+	if !handle.group {
+		req.Matched = true
+	}
 	if handle.group && len(handle.routes) > 0 {
 		for _, r := range handle.routes {
 			if recursiveMatch(uriTokens[p:], r, req) {
 				return true && !r.group
 			}
+		}
+		if !req.Matched && handle.Fallback != nil {
+			req.Matched = true
+			handle.Fallback(*req)
 		}
 	}
 	return false
@@ -169,7 +185,7 @@ func (handle *handler) Group(match string, onMatch func(req Request), onSubRoute
 		routes:   []*Route{},
 		tokens:   tokenize(strings.Trim(match, "/")),
 		group:    true,
-		callback: onMatch,
+		Callback: onMatch,
 	}
 	handle.routes = append(handle.routes, &newRoute)
 	if onSubRouter != nil {
@@ -184,7 +200,7 @@ func (handle *Route) Group(match string, onMatch func(req Request), onSubRouter 
 		routes:   []*Route{},
 		tokens:   tokenize(strings.Trim(match, "/")),
 		group:    true,
-		callback: onMatch,
+		Callback: onMatch,
 	}
 	handle.routes = append(handle.routes, &newRoute)
 
@@ -201,7 +217,7 @@ func (handle *Route) Match(match string, method string, onMatch func(req Request
 		routes:   []*Route{},
 		method:   method,
 		tokens:   tokenize(strings.Trim(match, "/")),
-		callback: onMatch,
+		Callback: onMatch,
 	}
 
 	handle.routes = append(handle.routes, &newRoute)
@@ -214,7 +230,7 @@ func (handle *handler) Match(match string, method string, onMatch func(req Reque
 		routes:   []*Route{},
 		method:   method,
 		tokens:   tokenize(strings.Trim(match, "/")),
-		callback: onMatch,
+		Callback: onMatch,
 	}
 
 	handle.routes = append(handle.routes, &newRoute)
@@ -237,7 +253,7 @@ func (handle *handler) Domain(match string, onMatch func(req Request), onSubRout
 		group:       true,
 		domain:      match,
 		domainMatch: regexp.MustCompile(regex),
-		callback:    onMatch,
+		Callback:    onMatch,
 	}
 	handle.routes = append(handle.routes, &newRoute)
 	if onSubRouter != nil {
@@ -280,7 +296,7 @@ func (handle *handler) Static(match string, dir string, onMatch func(req Request
 		staticDir: strings.Trim(dir, "/"),
 		tokens:    tokenize(strings.Trim(match, "/")),
 		group:     true,
-		callback:  onMatch,
+		Callback:  onMatch,
 	}
 	handle.routes = append(handle.routes, &newRoute)
 	return &newRoute
@@ -294,7 +310,7 @@ func (handle *Route) Static(match string, dir string, onMatch func(req Request))
 		staticDir: strings.Trim(dir, "/"),
 		tokens:    tokenize(strings.Trim(match, "/")),
 		group:     true,
-		callback:  onMatch,
+		Callback:  onMatch,
 	}
 	handle.routes = append(handle.routes, &newRoute)
 	return &newRoute
