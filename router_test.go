@@ -42,6 +42,10 @@ func TestRouter(t *testing.T) {
 		})
 	})
 
+	handler.Match("/", "", func(req router.Request) {
+		req.WriteString("Welcome to index")
+	})
+
 	err := http.ListenAndServe("0.0.0.0:8080", &handler)
 	if err != nil {
 		fmt.Println(err)
