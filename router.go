@@ -37,7 +37,8 @@ func GetInstance() handler {
 }
 func (handle *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	uri := strings.Trim(request.RequestURI, "/")
-	uriTokens := strings.Split(uri, "/")
+	uriChunks := strings.Split(uri, "?")
+	uriTokens := strings.Split(uriChunks[0], "/")
 	req := Request{
 		writer:     writer,
 		request:    request,
