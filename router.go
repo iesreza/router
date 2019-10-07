@@ -69,8 +69,10 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	if handle.domainMatch != nil && !handle.domainMatch.MatchString(req.Req().Host) {
 		return false
 	}
-	if (handle.method != "" || handle.method != "*") && strings.ToLower(req.request.Method) != strings.ToLower(handle.method) {
-		return false
+	if handle.method != "" && strings.ToLower(req.request.Method) != strings.ToLower(handle.method) {
+		if handle.method != "*" {
+			return false
+		}
 	}
 	if !handle.group && len(uriTokens) > len(handle.tokens) {
 
