@@ -66,7 +66,7 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	bypass := false
 	for _, item := range handle.middleware {
 		if !item(*req) {
-			if handle.Else != nil {
+			if handle.onElse != nil {
 				handle.onElse(*req)
 			}
 			return false
@@ -74,7 +74,7 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	}
 	if handle.domainMatch != nil {
 		if !handle.domainMatch.MatchString(req.Req().Host) {
-			if handle.Else != nil {
+			if handle.onElse != nil {
 				handle.onElse(*req)
 			}
 			return false
@@ -84,14 +84,14 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	}
 	if handle.method != "" && strings.ToLower(req.request.Method) != strings.ToLower(handle.method) {
 		if handle.method != "*" {
-			if handle.Else != nil {
+			if handle.onElse != nil {
 				handle.onElse(*req)
 			}
 			return false
 		}
 	}
 	if !handle.group && len(uriTokens) > len(handle.tokens) {
-		if handle.Else != nil {
+		if handle.onElse != nil {
 			handle.onElse(*req)
 		}
 		return false
@@ -134,13 +134,13 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 			}
 			pointer++
 			if pointer == len(uriTokens) {
-				if handle.Else != nil {
+				if handle.onElse != nil {
 					handle.onElse(*req)
 				}
 				return false
 			}
 			if !handle.tokens[i].isMatch(uriTokens[pointer]) {
-				if handle.Else != nil {
+				if handle.onElse != nil {
 					handle.onElse(*req)
 				}
 				return false
@@ -153,7 +153,7 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 		}
 
 		if !handle.group && matched+lazyMatched != len(uriTokens) {
-			if handle.Else != nil {
+			if handle.onElse != nil {
 				handle.onElse(*req)
 			}
 			return false
