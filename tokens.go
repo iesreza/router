@@ -57,7 +57,7 @@ func tokenize(input string) []token {
 				tk.matchType = 0
 			}
 		} else {
-			tk.match = ""
+			tk.match = item
 			tk.matchType = 0
 		}
 		tokens = append(tokens, tk)

@@ -30,6 +30,7 @@ type Route struct {
 	middleware  []func(req Request) bool
 	Callback    func(req Request)
 	Fallback    func(req Request)
+	onElse      func(req Request)
 }
 
 func GetInstance() handler {
@@ -38,7 +39,8 @@ func GetInstance() handler {
 func (handle *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	uri := strings.Trim(request.RequestURI, "/")
 	uriChunks := strings.Split(uri, "?")
-	uriTokens := strings.Split(uriChunks[0], "/")
+	uriTokens := strings.Split(strings.Trim(uriChunks[0], "/"), "/")
+
 	req := Request{
 		writer:     writer,
 		request:    request,
@@ -61,98 +63,123 @@ func (handle *handler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 }
 
 func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
+	bypass := false
 	for _, item := range handle.middleware {
 		if !item(*req) {
+			if handle.Else != nil {
+				handle.onElse(*req)
+			}
 			return false
 		}
 	}
-	if handle.domainMatch != nil && !handle.domainMatch.MatchString(req.Req().Host) {
-		return false
+	if handle.domainMatch != nil {
+		if !handle.domainMatch.MatchString(req.Req().Host) {
+			if handle.Else != nil {
+				handle.onElse(*req)
+			}
+			return false
+		} else {
+			bypass = true
+		}
 	}
 	if handle.method != "" && strings.ToLower(req.request.Method) != strings.ToLower(handle.method) {
 		if handle.method != "*" {
+			if handle.Else != nil {
+				handle.onElse(*req)
+			}
 			return false
 		}
 	}
 	if !handle.group && len(uriTokens) > len(handle.tokens) {
-
+		if handle.Else != nil {
+			handle.onElse(*req)
+		}
 		return false
 	}
+	p := 0
+	if !bypass {
+		p = min(len(uriTokens), len(handle.tokens))
+		temp := map[string]value{}
+		matched := 0
+		lazyMatched := 0
+		var i int
+		pointer := -1
 
-	p := min(len(uriTokens), len(handle.tokens))
-	temp := map[string]value{}
-	matched := 0
-	lazyMatched := 0
-	var i int
-	pointer := -1
+		for i = 0; i < len(handle.tokens); i++ {
+			if handle.tokens[i].lazy {
 
-	for i = 0; i < len(handle.tokens); i++ {
-		if handle.tokens[i].lazy {
+				index := strings.Index(req.request.RequestURI, handle.tokens[i].varName+":")
+				if index > 0 {
 
-			index := strings.Index(req.request.RequestURI, handle.tokens[i].varName+":")
-			if index > 0 {
-
-				variable := ""
-				for i := index + len(handle.tokens[i].varName+":"); i < len(req.request.RequestURI); i++ {
-					if req.request.RequestURI[i] == '/' {
-						break
+					variable := ""
+					for i := index + len(handle.tokens[i].varName+":"); i < len(req.request.RequestURI); i++ {
+						if req.request.RequestURI[i] == '/' {
+							break
+						}
+						variable += string(req.request.RequestURI[i])
 					}
-					variable += string(req.request.RequestURI[i])
+					if handle.tokens[i].match.(*regexp.Regexp).MatchString(variable) {
+						temp[handle.tokens[i].varName] = value(variable)
+						lazyMatched++
+					}
 				}
-				if handle.tokens[i].match.(*regexp.Regexp).MatchString(variable) {
-					temp[handle.tokens[i].varName] = value(variable)
-					lazyMatched++
+				continue
+			}
+		}
+
+		i = 0
+		for i = 0; i < len(handle.tokens); i++ {
+			if handle.tokens[i].lazy {
+				continue
+			}
+			pointer++
+			if pointer == len(uriTokens) {
+				if handle.Else != nil {
+					handle.onElse(*req)
+				}
+				return false
+			}
+			if !handle.tokens[i].isMatch(uriTokens[pointer]) {
+				if handle.Else != nil {
+					handle.onElse(*req)
+				}
+				return false
+			} else {
+				matched++
+				if handle.tokens[i].matchType == 1 {
+					req.Parameters[handle.tokens[i].varName] = value(uriTokens[pointer])
 				}
 			}
-			continue
 		}
-	}
 
-	i = 0
-	for i = 0; i < len(handle.tokens); i++ {
-		if handle.tokens[i].lazy {
-			continue
+		if !handle.group && matched+lazyMatched != len(uriTokens) {
+			if handle.Else != nil {
+				handle.onElse(*req)
+			}
+			return false
 		}
-		pointer++
-		if pointer == len(uriTokens) {
+
+		//restore lazy vars
+		for k, v := range temp {
+			req.Parameters[k] = v
+		}
+
+		if handle.static {
+			path := handle.staticDir + "/" + strings.Join(uriTokens[p:], "/")
+			if fileExists(path) {
+				if handle.Callback != nil {
+					handle.Callback(*req)
+				}
+				http.ServeFile(req.writer, req.request, path)
+				req.Matched = true
+
+				return true
+			} else {
+				req.writer.WriteHeader(404)
+			}
 
 			return false
 		}
-		if !handle.tokens[i].isMatch(uriTokens[pointer]) {
-
-			return false
-		} else {
-			matched++
-			if handle.tokens[i].matchType == 1 {
-				req.Parameters[handle.tokens[i].varName] = value(uriTokens[pointer])
-			}
-		}
-	}
-
-	if !handle.group && matched+lazyMatched != len(uriTokens) {
-
-		return false
-	}
-
-	//restore lazy vars
-	for k, v := range temp {
-		req.Parameters[k] = v
-	}
-
-	if handle.static {
-		path := handle.staticDir + "/" + strings.Join(uriTokens[p:], "/")
-		if fileExists(path) {
-			if handle.Callback != nil {
-				handle.Callback(*req)
-			}
-			http.ServeFile(req.writer, req.request, path)
-			req.Matched = true
-			return true
-		} else {
-			req.writer.WriteHeader(404)
-		}
-
-		return false
 	}
 	if handle.Callback != nil {
 		handle.Callback(*req)
@@ -161,16 +188,14 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 	if !handle.group {
 		req.Matched = true
 	}
+
 	if handle.group && len(handle.routes) > 0 {
 		for _, r := range handle.routes {
 			if recursiveMatch(uriTokens[p:], r, req) {
 				return true
 			}
 		}
-		/*if !req.Matched && handle.Fallback != nil {
-			req.Matched = true
-			handle.Fallback(*req)
-		}*/
+
 	}
 	return false
 }
@@ -284,6 +309,12 @@ func (route *Route) Middleware(middlewares ...func(req Request) bool) *Route {
 	}
 	return route
 }
+
+func (route *Route) Else(onMatch func(req Request)) *Route {
+	route.onElse = onMatch
+	return route
+}
+
 func (route *handler) Middleware(middlewares ...func(req Request) bool) *handler {
 	for _, item := range middlewares {
 		route.middleware = append(route.middleware, item)
