@@ -55,10 +55,9 @@ func (handle *handler) ServeHTTP(writer http.ResponseWriter, request *http.Reque
 			return
 		}
 	}
-	/*	if !req.Matched && handle.Fallback != nil {
-		req.Matched = true
+	if !req.Matched && handle.Fallback != nil {
 		handle.Fallback(req)
-	}*/
+	}
 
 }
 
@@ -182,6 +181,7 @@ func recursiveMatch(uriTokens []string, handle *Route, req *Request) bool {
 		}
 	}
 	if handle.Callback != nil {
+		req.Matched = true
 		handle.Callback(*req)
 	}
 
